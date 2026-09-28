@@ -1,0 +1,9 @@
+.venv/
+data/
+cache/
+cache_backup/
+models/
+__pycache__/
+*.zip
+*_out.txt
+answer_*.csv
