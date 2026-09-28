@@ -10,7 +10,8 @@ from sentence_transformers import SentenceTransformer
 from step2_baseline import analyzer, item_text, query_text, loc_ids, recall_at_k, DATA, K
 
 sys.stdout.reconfigure(encoding="utf-8")
-MODEL = "intfloat/multilingual-e5-base"
+MODEL = os.environ.get("MODEL", "models/e5-avito")   # дообученная модель (итоговое решение)
+CACHE_SUFFIX = "" if MODEL == "intfloat/multilingual-e5-base" else "_ft"
 RADIUS = float(os.environ.get("RADIUS", 200))   # радиус затухания расстояния, км
 POP = float(os.environ.get("POP", 1))          # вес популярности (0 = выключено)
 KIND = float(os.environ.get("KIND", 0))   # вес совпадения "Вид услуги" (0 = выключено)
@@ -41,7 +42,7 @@ _model = None
 def encode(texts, tag):
     """Считает эмбеддинги на GPU и кэширует на диск (повторный запуск быстрый)."""
     global _model
-    path = f"cache/{tag}.npy"
+    path = f"cache/{tag}{CACHE_SUFFIX}.npy"
     if os.path.exists(path):
         return np.load(path)
     if _model is None:
@@ -142,7 +143,7 @@ def validate(n_val=1000):
     val_item_ids = set().union(*relevant)   # все верные ответы валидации
     train_fit = train[~train["search_query"].isin(set(texts.iloc[:n_val])) & ~train["item_id"].isin(val_item_ids)]
     centers = location_centers(train_fit)
-    configs = [(w, 2.0, 4.0) for w in (0.7, 0.85, 0.95)]
+    configs = [(0.95, lb, db) for lb in (1.0, 2.0, 4.0) for db in (2.0, 4.0, 6.0)]
     res = retrieve(groups, corpus, D_emb, Q_emb, configs, centers)
     for c in configs:
         print(f"w=0.85 loc={c[1]} dist={c[2]}: Recall@{K} = {recall_at_k(res[c], relevant):.4f}")
@@ -158,7 +159,7 @@ def submit(w, lb, db=0.0):
     cfg = (w, lb, db)
     preds = retrieve(queries, items, D_emb, Q_emb, [cfg], centers)[cfg]
     ans = pd.DataFrame({"query_id": queries["query_id"].astype(str), "answer": [" ".join(p) for p in preds]})
-    ans.to_csv("answer_hybrid.csv", index=False)
+    ans.to_csv("answer.csv", index=False)
     print("answer.csv сохранён, строк:", len(ans))
 
 def validate_real(n_val=1000):
@@ -182,10 +183,10 @@ def validate_real(n_val=1000):
     D_emb = encode(passage_text(items), "items")                 # из кэша
     Q_emb = encode(query_prefixed(groups), "val2_queries")       # новый кэш
     print("Корпус:", len(items), "| запросов:", len(groups))
-    configs = [(0.85, 2.0, 4.0), (0.85, 2.0, 6.0), (0.85, 2.0, 8.0)]
+    configs = [(0.95, lb, db) for lb in (1.0, 2.0, 4.0) for db in (2.0, 4.0, 6.0)]
     res = retrieve(groups, items, D_emb, Q_emb, configs, centers)
     for c in configs:
-        print(f"w=0.85 loc={c[1]} dist={c[2]}: Recall@{K} = {recall_at_k(res[c], relevant):.4f}")
+        print(f"w={c[0]} loc={c[1]} dist={c[2]}: Recall@{K} = {recall_at_k(res[c], relevant):.4f}")
     return groups, relevant, res[configs[0]], items, centers
 def analyze_errors():
     """Разбор промахов на val2: какие верные объявления не попали в топ-50 и чем они отличаются."""
