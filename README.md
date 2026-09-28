@@ -8,7 +8,7 @@
 
 ## Как запустить
 
-Нужен Python 3.12 и видеокарта NVIDIA (у меня RTX 5080 на 16 ГБ, Windows).
+Нужен Python 3.12 .
 
 ```bash
 python -m venv .venv
